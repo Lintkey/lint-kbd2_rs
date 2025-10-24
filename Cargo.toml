@@ -1,0 +1,68 @@
+[package]
+name = "lint-kbd2"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[package.metadata.embassy]
+build = [
+  { target = "thumbv7m-none-eabi" }
+]
+
+## embassy_rs部分
+[dependencies.embassy-stm32]
+version = "0.4.0"
+features = ["stm32f103c8", "memory-x", "chrono", "defmt", "time-driver-any"]
+
+[dependencies.embassy-sync]
+version = "0.7.2"
+features = ["defmt"]
+
+[dependencies.embassy-executor]
+version = "0.9.1"
+features = ["arch-cortex-m", "executor-thread", "defmt"]
+
+[dependencies.embassy-time]
+version = "0.5.0"
+# tick-hz用于设置time库计时的基准精度为(1/tick-hz)s
+# 按照文档说明，定时计数不使用板载计时器，仅使用计时器提供中断计数
+# 需要避免单次中断处理超过缓存上限(计时器16b寄存器)，不过没写什么巨耗时的中断程序，应该无所谓？
+# 另外对于达到USB轮询率上限(1KHz)的键盘，中断程序就更不应该超过1ms，此情况下1MHz也能用
+features = ["defmt", "defmt-timestamp-uptime", "tick-hz-1_000_000"]
+
+[dependencies.embassy-usb]
+version = "0.5.1"
+features = ["defmt"]
+
+
+
+[dependencies]
+# embassy异步运行时
+embassy-futures = "0.1.2"
+futures = { version = "0.3.31", default-features = false, features = [
+    "async-await",
+] }
+
+# logger
+defmt = "1.0.1"
+defmt-rtt = "1.1.0"
+# cortex & HAL
+cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
+cortex-m-rt = "0.7.5"
+embedded-hal = "1.0.0"
+stm32-metapac = { version = "18.0.0", features = ["stm32f103c8", "defmt", "rt"] }
+#usb device hid
+usbd-hid = { version = "0.8.2", features = ["defmt"] }
+
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+static_cell = "2.1.1"
+static_assertions = "1.1.0"
+
+# stm32f103C6T8 flash大小仅有64K，必须压缩大小
+[profile.dev]
+opt-level = "s"
+debug = 2
+
+[profile.release]
+opt-level = "z"
+debug = false
