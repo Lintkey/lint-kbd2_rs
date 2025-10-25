@@ -6,7 +6,6 @@ use {defmt_rtt as _, panic_probe as _};
 
 use embassy_stm32 as stm32;
 use stm32::peripherals;
-use stm32::gpio;
 use stm32::usb;
 
 // MCU底层配置
@@ -68,13 +67,17 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
         config
     };
+    #[cfg(debug_assertions)]
     let mut mcu_peri = stm32::init(peripherals_cfg);
+    #[cfg(not(debug_assertions))]
+    let mcu_peri = stm32::init(peripherals_cfg);
 
     defmt::info!("Successfully initialized peripherals.");
 
     // 开发模式时USB一直连着电脑，需要device主动下拉dp 10ms提醒电脑重置
     // 后面不用上拉，usb_device第一次run时会自动配置
     #[cfg(debug_assertions)] {
+        use stm32::gpio;
         // 按照USB协议，DP拉低10ms通知主机进行复位
         let _dp = gpio::Output::new(
             mcu_peri.PA12.reborrow(),

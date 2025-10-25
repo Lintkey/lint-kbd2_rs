@@ -96,7 +96,7 @@ impl KbdCore {
                 process_inner(state_key, qwerty_key, event).await;
             },
             UncertKey::MK(state_key, qwerty_key, time_ms) => {
-                let time_ms = embassy_time::Duration::from_micros(time_ms as u64);
+                let time_ms = embassy_time::Duration::from_millis(time_ms as u64);
                 let timeout_fut = embassy_time::with_timeout(time_ms,
                     KEY_EVENT_CHANNEL.receive()
                 );
