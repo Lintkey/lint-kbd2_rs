@@ -1,11 +1,11 @@
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KbdKey {
+    /// 普通按键，即字母、数字、符号、Fn区的按键
     Normal(QwertyKey),
+    /// 状态按键，包括：
+    /// 1.Shift、Ctrl、Alt、Gui(即Windows下的Win键)
+    /// 2.切层键
     State(StateKey),
-}
-
-impl KbdKey {
-    // pub const NONE: Self = KbdKey::Normal(QwertyKey::None);
 }
 
 /// 非Modifier Key，可直接转换为USB keycode
@@ -363,9 +363,9 @@ pub enum QwertyKey {
     MouseAccel2 = 0xDF,
 }
 
-impl Into<KbdKey> for QwertyKey {
-    fn into(self) -> KbdKey {
-        KbdKey::Normal(self)
+impl From<QwertyKey> for KbdKey {
+    fn from(value: QwertyKey) -> Self {
+        KbdKey::Normal(value)
     }
 }
 
@@ -377,9 +377,9 @@ pub enum StateKey {
     Layer(LayerKey),
 }
 
-impl Into<KbdKey> for StateKey {
-    fn into(self) -> KbdKey {
-        KbdKey::State(self)
+impl<T: Into<StateKey>> From<T> for KbdKey {
+    fn from(value: T) -> Self {
+        KbdKey::State(value.into())
     }
 }
 
@@ -405,9 +405,9 @@ pub enum ModifierKey {
     RGui = 0xE7,
 }
 
-impl Into<StateKey> for ModifierKey {
-    fn into(self) -> StateKey {
-        StateKey::Modifier(self)
+impl From<ModifierKey> for StateKey {
+    fn from(value: ModifierKey) -> Self {
+        StateKey::Modifier(value)
     }
 }
 
@@ -418,8 +418,16 @@ pub enum LayerKey {
     LayerSwitch(u8),
 }
 
-impl Into<StateKey> for LayerKey {
-    fn into(self) -> StateKey {
-        StateKey::Layer(self)
+impl From<LayerKey> for StateKey {
+    fn from(value: LayerKey) -> Self {
+        StateKey::Layer(value)
     }
+}
+
+
+#[allow(unused)]
+pub mod basic_key {
+    pub use super::LayerKey::*;
+    pub use super::ModifierKey::*;
+    pub use super::QwertyKey::*;
 }

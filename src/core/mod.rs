@@ -1,61 +1,39 @@
 // 最顶层抽象，基于事件驱动
-// 处理kbd传入的按键事件: input->键位映射->确定按键动作->发送按键报告
-
-// ## 按下与释放
-// 
-
-// ## (modify,normal)确定方案
-// 首先需要明确的是，待确定键只能有一个。
-// 存在待确定键时按下其他按键，触发modify
-// 待确定键被释放时，触发normal
-// 此外还有一种确定条件：当按下超过判决时间时，触发modify
-// 此确定条件是可选的，后续分两种组合键实现
-
-// ## 切层
-// 基于计数而非bool状态
-
-// KeyEvent(pos, is_pressed): 按键事件，原始输入
-// KeyAction: 按键动作，
-// KeyReport: 按键报文，最终输出
-
-/*
-O(Fn, Normal)
-M(Stat, Normal)
-K(all)
- */
+// 处理kbd传入的按键事件: input->确定按键动作->发送按键报告
 
 pub(crate) mod channel;
 pub mod key_buffer;
+pub mod kbd;
 
-use crate::constants::{KEY_NUM, LAYER_NUM};
 use crate::core::channel::{KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL};
 use crate::core::key_buffer::KeyBuffer;
-use crate::kbd::key::{KbdKey, LayerKey, QwertyKey, StateKey};
-use crate::kbd::key_action::{KeyAction, UncertKey};
-use crate::kbd::key_event::KeyEvent;
 
-pub type KeyMap = [[KeyAction; KEY_NUM]; LAYER_NUM];
+use kbd::key::{KbdKey, LayerKey, QwertyKey, StateKey};
+use kbd::key_action::{KeyAction, UncertKey};
+use kbd::key_event::KeyEvent;
 
-pub struct KbdCore {
+pub type KeyMap<const KEY_NUM: usize, const LAYER_NUM: usize> = [[KeyAction; KEY_NUM]; LAYER_NUM];
+
+pub struct KbdCore<const KEY_NUM: usize, const LAYER_NUM: usize> {
     /// 按键报文序列，用于维护按键顺序、构造按键报文
     key_buffer: KeyBuffer,
     /// 待处理的未确定键
     uncert_key: Option<(UncertKey, usize)>,
     /// 键盘按键布局
-    key_map: KeyMap,
+    key_map: KeyMap<KEY_NUM, LAYER_NUM>,
     /// 键盘Layer激活状态，高层优先级更高
     layer_state: [bool; LAYER_NUM],
     /// 按键动作缓存，用于在松开按键时撤销按键动作
     kbd_cache: [Option<KbdKey>; KEY_NUM],
 }
 
-impl KbdCore {
-    pub fn new(key_map: KeyMap) -> Self {
+impl<const KEY_NUM: usize, const LAYER_NUM: usize> KbdCore<KEY_NUM, LAYER_NUM> {
+    pub fn new(key_map: KeyMap<KEY_NUM, LAYER_NUM>) -> Self {
         Self {
             key_buffer: KeyBuffer::default(),
             uncert_key: None,
             key_map,
-            layer_state: [false; LAYER_NUM],
+            layer_state: core::array::from_fn(|i| i==0),
             kbd_cache: [None; KEY_NUM],
         }
     }
@@ -95,7 +73,7 @@ impl KbdCore {
                 let event = KEY_EVENT_CHANNEL.receive().await;
                 process_inner(state_key, qwerty_key, event).await;
             },
-            UncertKey::MK(state_key, qwerty_key, time_ms) => {
+            UncertKey::HK(state_key, qwerty_key, time_ms) => {
                 let time_ms = embassy_time::Duration::from_millis(time_ms as u64);
                 let timeout_fut = embassy_time::with_timeout(time_ms,
                     KEY_EVENT_CHANNEL.receive()
@@ -113,7 +91,6 @@ impl KbdCore {
         if !event.is_pressed {
             if let Some(kbd_key) = self.kbd_cache[key_index] {
                 self.process_release_kbd_key(kbd_key, key_index).await;
-                // defmt::info!("{}", size_of::<Option<KbdKey>>());
             }
         } else {
             let action = self.get_press_action(key_index).await;
@@ -129,7 +106,7 @@ impl KbdCore {
             KeyAction::UK(uncert_key) => {
                 self.uncert_key = Some((uncert_key.clone(), key_index));
             }
-            KeyAction::None => {},
+            KeyAction::NA => {},
             KeyAction::TS => unreachable!(),
         };
     }
@@ -192,7 +169,7 @@ impl KbdCore {
                 return action.clone();
             }
         }
-        KeyAction::None
+        KeyAction::NA
     }
 }
 

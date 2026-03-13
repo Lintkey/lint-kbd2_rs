@@ -1,38 +1,48 @@
+pub mod debounce;
+pub mod key_state;
+
 use defmt::error;
 use embassy_stm32 as stm32;
 use stm32::gpio;
 use stm32::spi;
 
-use crate::constants::{KEY_NUM, SCAN_FREQUENCY};
 use crate::core::channel::KEY_EVENT_CHANNEL;
-use crate::kbd::key_event::KeyEvent;
-use crate::kbp::debounce::{DebounceKeyStates, KeyDiffTrait};
-use crate::kbp::key_state::BitKeyStates;
+use crate::core::kbd::key_event::KeyEvent;
+use debounce::{DebounceKeyStates, KeyDiff};
+use key_state::BitKeyStates;
 
 /// 基于74H165的按键扫描方案
-pub(crate) struct SPIKeyDevice<
+/// 
+/// 注意SPI扫描频率写死了，泛型里的扫描频率是按键完整扫描一遍的频率
+pub(crate) struct SPIKeyScanner<
     'd,
-    SPIMode: stm32::mode::Mode,
-    DStates: DebounceKeyStates
-> {
-    spi_key: spi::Spi<'d, SPIMode>,
+    DStates: DebounceKeyStates<BitKeyStates<KEY_NUM>, BitKeyStates<KEY_NUM>> + Default,
+    const SCAN_FREQUENCY: u64,
+    const KEY_NUM: usize,
+> where [(); (KEY_NUM+7)/8]: {
+    spi_key: spi::Spi<'d, stm32::mode::Blocking, stm32::spi::mode::Master>,
     plen: gpio::Output<'d>,
     key_states: DStates,
 }
 
-impl<'d, DStates: DebounceKeyStates> SPIKeyDevice<'d, stm32::mode::Blocking, DStates> {
-    pub fn new_blocking<T: spi::Instance>(
+impl<
+    'd,
+    DStates: DebounceKeyStates<BitKeyStates<KEY_NUM>, BitKeyStates<KEY_NUM>> + Default,
+    const SCAN_FREQUENCY: u64,
+    const KEY_NUM: usize,
+> SPIKeyScanner<'d, DStates, SCAN_FREQUENCY, KEY_NUM> where [(); (KEY_NUM+7)/8]: {
+    pub fn new_blocking<T: spi::Instance, A>(
         peri: stm32::Peri<'d, T>,
-        sclk: stm32::Peri<'d, impl spi::SckPin<T>>,
-        miso: stm32::Peri<'d, impl spi::MisoPin<T>>,
+        sclk: stm32::Peri<'d, impl spi::SckPin<T, A>>,
+        miso: stm32::Peri<'d, impl spi::MisoPin<T, A>>,
         plen: stm32::Peri<'d, impl gpio::Pin>,
     ) -> Self {
         let spi_key = {
             let mut spi_cfg = spi::Config::default();
             // 74HC165是上升沿时进行shift操作
-            // MODE_1为CPOL=0 CPHA=1
-            // 即周期开始时为上升沿并输出，周期中间为下降沿并采样
-            spi_cfg.mode = spi::MODE_1;
+            // 那么需要在SPI时钟开始时采样，中间应为上升沿shift
+            // 故SPI设定为MODE_1，即CPOL=1 CPHA=0
+            spi_cfg.mode = spi::MODE_2;
             // SW1在第一位，所以用LSB
             spi_cfg.bit_order = spi::BitOrder::LsbFirst;
             // 扫描速度1MHz，扫描轮询速度设为10KHz，即扫描间隔100us
@@ -45,7 +55,7 @@ impl<'d, DStates: DebounceKeyStates> SPIKeyDevice<'d, stm32::mode::Blocking, DSt
             spi::Spi::new_blocking_rxonly(peri, sclk, miso, spi_cfg)
         };
 
-        SPIKeyDevice {
+        SPIKeyScanner {
             spi_key,
             plen: gpio::Output::new(plen, gpio::Level::High, gpio::Speed::VeryHigh),
             key_states: DStates::default()
@@ -75,14 +85,16 @@ impl<'d, DStates: DebounceKeyStates> SPIKeyDevice<'d, stm32::mode::Blocking, DSt
         loop {
             self.parallel_load().await;
 
-            let mut read_buf = BitKeyStates::default();
+            let mut read_buf = [0; _];
             if let Err(e) = self.spi_key.blocking_read(&mut read_buf) {
-                error!("Failed to scan keyboard via SPI: {:?}", e);
+                error!("Failed to scan keyboard via SPI: {}", e);
             }
+            let read_buf = BitKeyStates::<KEY_NUM>::from_buffer(read_buf);
             let diff = self.key_states.debounce(&read_buf);
 
             for index in 0..KEY_NUM {
                 if diff.is_different(index) {
+
                     let key_event = {
                         let is_pressed = self.key_states.is_pressed(index);
                         let index = index as u8;

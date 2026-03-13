@@ -3,16 +3,19 @@ use usbd_hid::descriptor::KeyboardReport;
 #[derive(Default)]
 pub struct KeyBuffer {
     modifier: u8,
-    keycodes: [u8; 6],
+    keycodes: [u8; 7],
     cnt: usize,
 }
 
 impl KeyBuffer {
-    // TODO: 改成直接生成最终报文
+    // TODO(VL): 改成直接生成最终报文?
     pub fn get_cur_report(&self) -> KeyboardReport {
         KeyboardReport {
             modifier: self.modifier,
-            keycodes: self.keycodes.clone(),
+            keycodes: [
+                self.keycodes[0], self.keycodes[1], self.keycodes[2],
+                self.keycodes[3], self.keycodes[4], self.keycodes[5],
+            ],
             ..KeyboardReport::default()
         }
     }
@@ -37,13 +40,13 @@ impl KeyBuffer {
 
     pub fn release_key(&mut self, key_code: u8) {
         if let Some(index) = self.keycodes.iter().position(|&v| v==key_code) {
-            for idx in index..(self.keycodes.len()-1) {
+            for idx in index..(self.cnt-1) {
                 self.keycodes[idx] = self.keycodes[idx+1];
             }
-            self.keycodes[self.cnt] = 0;
+            self.keycodes[self.cnt-1] = 0;
             self.cnt -= 1;
         } else {
-            defmt::warn!("Release a uncached key `{}` in key_buffer", key_code)
+            defmt::error!("Release a uncached key `{}` in key_buffer", key_code)
         }
     }
 }
